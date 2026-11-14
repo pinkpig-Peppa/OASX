@@ -37,7 +37,7 @@ class I18n {
       notifyTestFailed = 'Notify Failed';
   static const String exportDiagnostic = 'Export Diagnostic',
       exportDiagnosticInProgress = 'Exporting diagnostic package',
-      exportDiagnosticFailed = 'Export diagnostic failed'
+      exportDiagnosticFailed = 'Export diagnostic failed';
   static const String currentVersion = 'Current Version',
       latestVersion = 'Latest Version',
       findNewVersion = 'Find New Version';
