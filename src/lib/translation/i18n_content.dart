@@ -38,6 +38,9 @@ class I18n {
   static const String exportDiagnostic = 'Export Diagnostic',
       exportDiagnosticInProgress = 'Exporting diagnostic package',
       exportDiagnosticFailed = 'Export diagnostic failed';
+  static const String doctor = 'Health Check',
+      doctorRunning = 'Running health checks',
+      doctorFailed = 'Health check failed';
   static const String currentVersion = 'Current Version',
       latestVersion = 'Latest Version',
       findNewVersion = 'Find New Version';

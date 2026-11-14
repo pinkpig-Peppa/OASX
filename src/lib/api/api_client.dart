@@ -182,6 +182,14 @@ class ApiClient {
     final data = Map<String, dynamic>.from(res.data as Map);
     return data['success'] == true ? data : null;
   }
+  /// 运行 OAS 一键体检, 返回 pass/warn/fail 结构化报告
+  Future<Map<String, dynamic>?> runDoctor({String configName = ''}) async {
+    final res = await request<dynamic>(
+      () => get('/tool/doctor', queryParameters: {'config_name': configName}),
+    );
+    if (!res.isSuccess || res.data is! Map) return null;
+    return Map<String, dynamic>.from(res.data as Map);
+  }
 
   Future<bool> notifyTest(String setting, String title, String content) async {
     final res = await request(
