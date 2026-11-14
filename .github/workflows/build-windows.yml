@@ -1,0 +1,119 @@
+name: Build Windows
+
+# 手动触发 (Actions 页面 Run workflow) 或推送 v* tag 时构建 Windows 发行包。
+# 产物: oasx_<version>_windows.zip (解压覆盖 OASX 目录即可)
+# tag 触发时自动创建 Release, 配合应用内「检查更新」使用。
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_name:
+        description: '版本名 (如 2.4.2)'
+        required: false
+        default: '2.4.2'
+      build_number:
+        description: '构建号'
+        required: false
+        default: '29'
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: '3.47.5'
+
+jobs:
+  build:
+    name: Build Windows Release
+    runs-on: windows-2022
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Show toolchain
+        shell: pwsh
+        run: |
+          flutter --version
+          dart --version
+
+      - name: Install dependencies
+        shell: pwsh
+        run: flutter pub get
+
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: |
+          $name = "${{ inputs.build_name }}"
+          $number = "${{ inputs.build_number }}"
+          if ([string]::IsNullOrWhiteSpace($name)) { $name = "2.4.2" }
+          if ([string]::IsNullOrWhiteSpace($number)) { $number = "29" }
+          if ($env:GITHUB_REF -like "refs/tags/v*") {
+            $tag = $env:GITHUB_REF -replace "refs/tags/v", ""
+            $name = ($tag -split "\+")[0]
+            $number = "${{ github.run_number }}"
+          }
+          "build_name=$name" >> $env:GITHUB_OUTPUT
+          "build_number=$number" >> $env:GITHUB_OUTPUT
+          Write-Host "resolved version: $name+$number"
+
+      - name: Build Windows
+        shell: pwsh
+        run: |
+          flutter build windows --release `
+            --build-name "${{ steps.ver.outputs.build_name }}" `
+            --build-number "${{ steps.ver.outputs.build_number }}"
+
+      - name: Package
+        id: package
+        shell: pwsh
+        working-directory: .
+        run: |
+          $release = Join-Path $env:GITHUB_WORKSPACE 'src/build/windows/x64/runner/Release'
+          if (!(Test-Path $release)) {
+            $release = Join-Path $env:GITHUB_WORKSPACE 'src/build/windows/runner/Release'
+          }
+          if (!(Test-Path $release)) { throw 'build output not found' }
+
+          $asset = "oasx_${{ steps.ver.outputs.build_name }}_windows.zip"
+          $assetPath = Join-Path $env:GITHUB_WORKSPACE $asset
+          if (Test-Path $assetPath) { Remove-Item $assetPath -Force }
+          Compress-Archive -Path (Join-Path $release '*') -DestinationPath $assetPath
+
+          "asset_path=$assetPath" >> $env:GITHUB_OUTPUT
+          "asset_name=$asset" >> $env:GITHUB_OUTPUT
+          $size = [math]::Round((Get-Item $assetPath).Length / 1MB, 1)
+          Write-Host "packaged $asset ($size MB)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: oasx-windows-${{ steps.ver.outputs.build_name }}
+          path: ${{ steps.package.outputs.asset_path }}
+          retention-days: 30
+
+      - name: Publish release (tag only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "${{ steps.package.outputs.asset_path }}" `
+            --repo "${{ github.repository }}" `
+            --title "OASX ${{ github.ref_name }}" `
+            --notes "Fork build ${{ steps.ver.outputs.build_name }}+${{ steps.ver.outputs.build_number }}"
