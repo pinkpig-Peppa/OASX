@@ -175,6 +175,14 @@ class ApiClient {
     return res.isSuccess && res.data == 'success';
   }
 
+  /// 导出后端脱敏诊断包 (配置摘要 + 最近日志), 见 OAS /home/export_diagnostic。
+  Future<Map<String, dynamic>?> exportDiagnostic() async {
+    final res = await request<dynamic>(() => get('/home/export_diagnostic'));
+    if (!res.isSuccess || res.data is! Map) return null;
+    final data = Map<String, dynamic>.from(res.data as Map);
+    return data['success'] == true ? data : null;
+  }
+
   Future<bool> notifyTest(String setting, String title, String content) async {
     final res = await request(
       () => post(

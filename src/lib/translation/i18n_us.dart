@@ -39,6 +39,10 @@ final Map<String, String> _us_ui = {
   I18n.noData: 'No data',
   I18n.notifyTestHelp:
       'Please refer to the documentation [Message Push] to fill in the relevant configuration',
+  I18n.exportDiagnostic: 'Export Diagnostics',
+  I18n.exportDiagnosticInProgress: 'Generating diagnostic package…',
+  I18n.exportDiagnosticFailed:
+      'Failed to export diagnostics, please check the OAS backend is running and supports this feature'
   I18n.rootPathServerHelp:
       'OASX and OAS are two different things. Do not confuse them, do not put them in the same directory, do not use spaces, do not use Chinese characters, and do not use overly long paths',
   I18n.installOasHelp:
