@@ -48,7 +48,7 @@ final Map<String, String> _cn_ui = {
   I18n.notifyTestFailed: '推送失败',
   I18n.exportDiagnostic: '导出诊断包',
   I18n.exportDiagnosticInProgress: '正在生成诊断包, 稍候…',
-  I18n.exportDiagnosticFailed: '诊断包导出失败, 请确认后端已运行且支持该功能'
+  I18n.exportDiagnosticFailed: '诊断包导出失败, 请确认后端已运行且支持该功能',
   I18n.currentVersion: '当前版本',
   I18n.latestVersion: '最新版本',
   I18n.findNewVersion: '发现新版本',
