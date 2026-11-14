@@ -24,11 +24,11 @@ class OasSettingsCard extends StatelessWidget {
           left: Text(I18n.notifyTest.tr),
           right: const Icon(Icons.input_rounded),
           onTap: notifyTest,
+        ),
         SettingItem(
           left: Text(I18n.exportDiagnostic.tr),
           right: const Icon(Icons.input_rounded),
           onTap: exportDiagnostic,
-        ),
         ),
         SettingItem(
           left: Text(I18n.autoRunScript.tr),
