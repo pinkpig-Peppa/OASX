@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 
+import 'package:oasx/api/api_client.dart';
+import 'package:oasx/config/design_tokens.dart';
 import 'package:oasx/modules/home/tool_view.dart';
 import 'package:oasx/modules/settings/controllers/settings_controller.dart';
 import 'package:oasx/modules/settings/oas_card_extra.dart';
@@ -21,6 +24,11 @@ class OasSettingsCard extends StatelessWidget {
           left: Text(I18n.notifyTest.tr),
           right: const Icon(Icons.input_rounded),
           onTap: notifyTest,
+        SettingItem(
+          left: Text(I18n.exportDiagnostic.tr),
+          right: const Icon(Icons.input_rounded),
+          onTap: exportDiagnostic,
+        ),
         ),
         SettingItem(
           left: Text(I18n.autoRunScript.tr),
@@ -66,6 +74,67 @@ void notifyTest() {
 
 void openDeploySetting() {
   Get.toNamed('/server');
+}
+
+Future<void> exportDiagnostic() async {
+  final exporting = true.obs;
+  final resultPath = ''.obs;
+  final failed = false.obs;
+
+  Get.dialog(
+    Obx(() {
+      if (exporting.value) {
+        return AlertDialog(
+          title: Text(I18n.exportDiagnostic.tr),
+          content: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: Spacing.sm),
+              Text(I18n.exportDiagnosticInProgress.tr),
+            ],
+          ),
+        );
+      }
+      if (failed.value) {
+        return AlertDialog(
+          title: Text(I18n.exportDiagnostic.tr),
+          content: Text(I18n.exportDiagnosticFailed.tr),
+          actions: [
+            TextButton(onPressed: Get.back, child: Text(I18n.confirm.tr)),
+          ],
+        );
+      }
+      return AlertDialog(
+        title: Text(I18n.exportDiagnostic.tr),
+        content: SelectableText(resultPath.value),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: resultPath.value));
+              Get.snackbar(I18n.copySuccess.tr, '');
+              Get.back();
+            },
+            child: Text(I18n.copy.tr),
+          ),
+          TextButton(onPressed: Get.back, child: Text(I18n.confirm.tr)),
+        ],
+      );
+    }),
+    barrierDismissible: false,
+  );
+
+  final data = await ApiClient().exportDiagnostic();
+  exporting.value = false;
+  if (data == null) {
+    failed.value = true;
+    return;
+  }
+  resultPath.value = (data['path'] ?? '').toString();
 }
 
 class DeploySwitcher extends StatelessWidget {
