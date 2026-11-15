@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import 'package:styled_widget/styled_widget.dart';
 
 import 'package:oasx/api/api_client.dart';
 import 'package:oasx/config/design_tokens.dart';
@@ -29,6 +30,11 @@ class OasSettingsCard extends StatelessWidget {
           left: Text(I18n.exportDiagnostic.tr),
           right: const Icon(Icons.input_rounded),
           onTap: exportDiagnostic,
+        ),
+        SettingItem(
+          left: Text(I18n.doctor.tr),
+          right: const Icon(Icons.input_rounded),
+          onTap: doctor,
         ),
         SettingItem(
           left: Text(I18n.autoRunScript.tr),
@@ -135,6 +141,116 @@ Future<void> exportDiagnostic() async {
     return;
   }
   resultPath.value = (data['path'] ?? '').toString();
+}
+
+Future<void> doctor() async {
+  final loading = true.obs;
+  final report = Rxn<Map<String, dynamic>>();
+  final failed = false.obs;
+
+  Get.dialog(
+    Obx(() {
+      final data = report.value;
+      if (loading.value) {
+        return AlertDialog(
+          title: Text(I18n.doctor.tr),
+          content: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: Spacing.sm),
+              Text(I18n.doctorRunning.tr),
+            ],
+          ),
+        );
+      }
+      if (failed.value || data == null) {
+        return AlertDialog(
+          title: Text(I18n.doctor.tr),
+          content: Text(I18n.doctorFailed.tr),
+          actions: [
+            TextButton(onPressed: Get.back, child: Text(I18n.confirm.tr)),
+          ],
+        );
+      }
+      final checks = (data['checks'] as List?) ?? const [];
+      final summary = (data['summary'] as Map?) ?? const {};
+      final passed = summary['pass'] ?? 0;
+      final warns = summary['warn'] ?? 0;
+      final fails = summary['fail'] ?? 0;
+      return AlertDialog(
+        title: Text('${I18n.doctor.tr}  $passed OK / $warns ! / $fails X'),
+        content: SizedBox(
+          width: 560,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: checks.map((item) => _doctorRow(item)).toList(),
+            ),
+          ).constrained(maxHeight: 420),
+        ),
+        actions: [
+          TextButton(onPressed: Get.back, child: Text(I18n.confirm.tr)),
+        ],
+      );
+    }),
+    barrierDismissible: false,
+  );
+
+  final data = await ApiClient().runDoctor();
+  loading.value = false;
+  if (data == null) {
+    failed.value = true;
+    return;
+  }
+  report.value = data;
+}
+
+Widget _doctorRow(dynamic item) {
+  final check = Map<String, dynamic>.from(item as Map);
+  final status = (check['status'] ?? '').toString();
+  final (IconData icon, Color color) = switch (status) {
+    'pass' => (Icons.check_circle, Colors.green),
+    'warn' => (Icons.warning_amber_rounded, Colors.orange),
+    'fail' => (Icons.error, Colors.red),
+    _ => (Icons.remove_circle_outline, Colors.grey),
+  };
+  final hint = (check['hint'] ?? '').toString();
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: color, size: 18),
+        const SizedBox(width: Spacing.sm),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                (check['title'] ?? '').toString(),
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              Text(
+                (check['detail'] ?? '').toString(),
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+              if (hint.isNotEmpty)
+                Text(
+                  '- $hint',
+                  style: TextStyle(fontSize: 12, color: Colors.orange.shade700),
+                ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class DeploySwitcher extends StatelessWidget {
