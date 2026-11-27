@@ -16,8 +16,9 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
-    # 本地工作脚本与旧版本备份不属于待编译源码
+    # 本地工作脚本、构建辅助脚本与旧版本备份不属于待编译源码
     - .workbuddy/**
+    - script/**
 include: package:flutter_lints/flutter.yaml
 
 linter:
