@@ -23,6 +23,8 @@ class WebSocketClient {
   final List<MessageListener> _listeners = [];
   bool _shouldReconnect = true;
   int _reconnectCount = 0;
+  int _connectionGen = 0;
+  Timer? _reconnectTimer;
   static const int maxReconnect = 3;
   static const int maxReconnectAfterClosed = 2;
   final status = WsStatus.connecting.obs;
@@ -62,11 +64,13 @@ class WebSocketClient {
     Duration timeout = const Duration(seconds: 5),
   }) async {
     final completer = Completer<T?>();
+    Timer? timer;
 
     late MessageListener tmpListener;
     tmpListener = (msg) async {
       try {
         if (await check(msg) && !completer.isCompleted) {
+          timer?.cancel();
           if (onResult != null) {
             completer.complete(onResult(msg));
           } else {
@@ -78,9 +82,9 @@ class WebSocketClient {
     };
 
     _addListener(tmpListener);
-    send(data);
+    unawaited(send(data));
 
-    Future.delayed(timeout, () {
+    timer = Timer(timeout, () {
       if (!completer.isCompleted) {
         completer.complete(null);
         _removeListener(tmpListener);
@@ -90,34 +94,71 @@ class WebSocketClient {
     return completer.future;
   }
 
+  static String normalizeWebSocketUrl(String rawUrl) {
+    final trimmed = rawUrl.trim();
+    if (trimmed.startsWith('ws://https://')) {
+      return 'wss://${trimmed.substring('ws://https://'.length)}';
+    }
+    if (trimmed.startsWith('ws://http://')) {
+      return 'ws://${trimmed.substring('ws://http://'.length)}';
+    }
+    if (trimmed.startsWith('https://')) {
+      return 'wss://${trimmed.substring('https://'.length)}';
+    }
+    if (trimmed.startsWith('http://')) {
+      return 'ws://${trimmed.substring('http://'.length)}';
+    }
+    return trimmed;
+  }
+
   Future<void> _connect() async {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    final gen = ++_connectionGen;
     try {
       status.value = WsStatus.connecting;
-      var address = url;
-      if (address.contains('http://')) {
-        address = address.replaceAll('http://', '');
-      }
+      final address = normalizeWebSocketUrl(url);
       printInfo(info: "ws[$name] connecting to $address");
-      _channel = WebSocketChannel.connect(Uri.parse(address));
-      await _channel!.ready;
+      final channel = WebSocketChannel.connect(Uri.parse(address));
+      _channel = channel;
+      await channel.ready;
+      if (gen != _connectionGen || !_shouldReconnect) {
+        try {
+          await channel.sink.close(
+            WebSocketStatus.normalClosure,
+            'stale connection',
+          );
+        } catch (_) {}
+        return;
+      }
+      _reconnectCount = 0;
       status.value = WsStatus.connected;
       printInfo(info: "ws[$name] connected!");
 
-      _channel!.stream.listen(
+      channel.stream.listen(
         (msg) {
-          for (final listener in List.from(_listeners)) {
+          if (gen != _connectionGen) return;
+          for (final listener in List<MessageListener>.from(_listeners)) {
             listener(msg);
           }
         },
-        onDone: _reconnect,
+        onDone: () {
+          if (gen != _connectionGen) return;
+          if (status.value != WsStatus.closed) {
+            status.value = WsStatus.closed;
+          }
+          unawaited(_reconnect());
+        },
         onError: (e) async {
+          if (gen != _connectionGen) return;
           printError(info: "ws[$name] error: $e");
           status.value = WsStatus.error;
           await _reconnect();
         },
       );
 
-      _channel!.sink.done.then((_) async {
+      channel.sink.done.then((_) async {
+        if (gen != _connectionGen) return;
         printInfo(info: "ws[$name] sink closed");
         if (status.value != WsStatus.closed) {
           status.value = WsStatus.closed;
@@ -125,10 +166,12 @@ class WebSocketClient {
         }
       });
     } on SocketException catch (e) {
+      if (gen != _connectionGen) return;
       printError(info: "ws[$name] SocketException: $e");
       status.value = WsStatus.error;
       await _reconnect();
     } on Exception catch (e) {
+      if (gen != _connectionGen) return;
       printError(info: "ws[$name] Exception: $e");
       status.value = WsStatus.error;
       await _reconnect();
@@ -148,13 +191,22 @@ class WebSocketClient {
     printInfo(info: "ws[$name] listener removed");
   }
 
-  Future<void> _close(int code, String reason, {bool reconnect = false}) async {
-    _shouldReconnect = reconnect;
+  Future<void> _closeChannelOnly(int code, String reason) async {
+    _connectionGen++;
+    final channel = _channel;
+    _channel = null;
     try {
-      await _channel?.sink.close(code, reason);
+      await channel?.sink.close(code, reason);
     } catch (e) {
       printError(info: e.toString());
     }
+  }
+
+  Future<void> _close(int code, String reason, {bool reconnect = false}) async {
+    _shouldReconnect = reconnect;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    await _closeChannelOnly(code, reason);
     status.value = WsStatus.closed;
     _listeners.clear();
     printInfo(info: "ws[$name] closed: $reason");
@@ -176,11 +228,11 @@ class WebSocketClient {
       printError(
           info: "ws[$name] reconnect failed more than $maxReconnect times");
       if (status.value != WsStatus.closed) {
-        printError(info: 'ws[$name] try close and reconnect');
-        await _close(
+        printError(info: 'ws[$name] try close channel and reconnect');
+        await _closeChannelOnly(
           WebSocketStatus.normalClosure,
           'client try connect, but failed',
-        ).timeout(const Duration(seconds: 2), onTimeout: () => false);
+        ).timeout(const Duration(seconds: 2), onTimeout: () {});
       }
       status.value = WsStatus.closed;
       if (_reconnectCount > maxReconnect + maxReconnectAfterClosed) {
@@ -191,9 +243,10 @@ class WebSocketClient {
     }
     printInfo(info: "ws[$name] reconnecting... ($_reconnectCount)");
     status.value = WsStatus.reconnecting;
-    Future.delayed(
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(
       Duration(seconds: _reconnectCount <= 1 ? 0 : 2),
-      () => _connect(),
+      () => unawaited(_connect()),
     );
   }
 }

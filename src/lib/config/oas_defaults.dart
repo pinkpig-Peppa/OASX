@@ -2,9 +2,10 @@ import 'dart:io';
 
 import 'package:path/path.dart' as path;
 
-/// 与本机 OAS 部署配置一致的私库和分支。
-const String defaultOasRepository = 'git@github-oas:tomoe1-1/OAS-tomoe.git';
-const String defaultOasBranch = 'self';
+/// 与配套 OAS 仓库一致的默认地址与分支。
+const String defaultOasRepository =
+    'https://github.com/pinkpig-Peppa/OnmyojiAutoScript.git';
+const String defaultOasBranch = 'master';
 
 /// OASX 放在 yys 的版本目录内，OAS 位于同级 OAS 目录。
 String resolveDefaultOasRootPath({String? executablePath}) {

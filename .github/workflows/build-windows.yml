@@ -2,19 +2,19 @@ name: Build Windows
 
 # 手动触发 (Actions 页面 Run workflow) 或推送 v* tag 时构建 Windows 发行包。
 # 产物: oasx_<version>_windows.zip (解压覆盖 OASX 目录即可)
-# tag 触发时自动创建 Release, 配合应用内「检查更新」使用。
+# tag 触发时自动创建或更新 Release, 配合应用内「检查更新」使用。
 
 on:
   workflow_dispatch:
     inputs:
       build_name:
-        description: '版本名 (如 2.4.2)'
+        description: '版本名 (如 2.4.2，留空默认读 pubspec.yaml)'
         required: false
-        default: '2.4.2'
+        default: ''
       build_number:
-        description: '构建号'
+        description: '构建号 (留空默认递增)'
         required: false
-        default: '29'
+        default: ''
   push:
     tags:
       - 'v*'
@@ -53,34 +53,74 @@ jobs:
         shell: pwsh
         run: flutter pub get
 
+      - name: Static analysis
+        shell: pwsh
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run unit and widget tests
+        shell: pwsh
+        run: flutter test
+
       - name: Resolve version
         id: ver
         shell: pwsh
+        env:
+          INPUT_BUILD_NAME: ${{ inputs.build_name }}
+          INPUT_BUILD_NUMBER: ${{ inputs.build_number }}
+          GITHUB_RUN_NUMBER_VALUE: ${{ github.run_number }}
         run: |
-          $name = "${{ inputs.build_name }}"
-          $number = "${{ inputs.build_number }}"
-          if ([string]::IsNullOrWhiteSpace($name)) { $name = "2.4.2" }
-          if ([string]::IsNullOrWhiteSpace($number)) { $number = "29" }
-          if ($env:GITHUB_REF -like "refs/tags/v*") {
-            $tag = $env:GITHUB_REF -replace "refs/tags/v", ""
-            $name = ($tag -split "\+")[0]
-            $number = "${{ github.run_number }}"
+          $pubspec = Get-Content 'pubspec.yaml' -Raw
+          $pubspecMatch = [regex]::Match($pubspec, '(?m)^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)\s*$')
+          $baseName = if ($pubspecMatch.Success) { $pubspecMatch.Groups[1].Value } else { '2.4.1' }
+          $baseNumber = if ($pubspecMatch.Success) { [int]$pubspecMatch.Groups[2].Value } else { 28 }
+
+          $name = $env:INPUT_BUILD_NAME.Trim()
+          $number = $env:INPUT_BUILD_NUMBER.Trim()
+
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $tag = $env:GITHUB_REF -replace '^refs/tags/v', ''
+            $parts = $tag -split '\+'
+            $name = $parts[0]
+            if ($parts.Length -gt 1 -and $parts[1] -match '^\d+$') {
+              $number = $parts[1]
+            } else {
+              $runNum = [int]$env:GITHUB_RUN_NUMBER_VALUE
+              $number = ($baseNumber + $runNum).ToString()
+            }
           }
+
+          if ([string]::IsNullOrWhiteSpace($name)) { $name = $baseName }
+          if ([string]::IsNullOrWhiteSpace($number)) {
+            $number = ($baseNumber + [int]$env:GITHUB_RUN_NUMBER_VALUE).ToString()
+          }
+
+          if ($name -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
+            throw "Invalid build_name: $name"
+          }
+          if ($number -notmatch '^\d+$' -or [int]$number -lt $baseNumber) {
+            throw "Invalid build_number (must be >= $baseNumber): $number"
+          }
+
           "build_name=$name" >> $env:GITHUB_OUTPUT
           "build_number=$number" >> $env:GITHUB_OUTPUT
           Write-Host "resolved version: $name+$number"
 
       - name: Build Windows
         shell: pwsh
+        env:
+          BUILD_NAME: ${{ steps.ver.outputs.build_name }}
+          BUILD_NUMBER: ${{ steps.ver.outputs.build_number }}
         run: |
           flutter build windows --release `
-            --build-name "${{ steps.ver.outputs.build_name }}" `
-            --build-number "${{ steps.ver.outputs.build_number }}"
+            --build-name "$env:BUILD_NAME" `
+            --build-number "$env:BUILD_NUMBER"
 
       - name: Package
         id: package
         shell: pwsh
         working-directory: .
+        env:
+          BUILD_NAME: ${{ steps.ver.outputs.build_name }}
         run: |
           $release = Join-Path $env:GITHUB_WORKSPACE 'src/build/windows/x64/runner/Release'
           if (!(Test-Path $release)) {
@@ -88,7 +128,7 @@ jobs:
           }
           if (!(Test-Path $release)) { throw 'build output not found' }
 
-          $asset = "oasx_${{ steps.ver.outputs.build_name }}_windows.zip"
+          $asset = "oasx_${env:BUILD_NAME}_windows.zip"
           $assetPath = Join-Path $env:GITHUB_WORKSPACE $asset
           if (Test-Path $assetPath) { Remove-Item $assetPath -Force }
           Compress-Archive -Path (Join-Path $release '*') -DestinationPath $assetPath
@@ -111,9 +151,20 @@ jobs:
         working-directory: .
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          REPO_NAME: ${{ github.repository }}
+          ASSET_PATH: ${{ steps.package.outputs.asset_path }}
+          BUILD_NAME: ${{ steps.ver.outputs.build_name }}
+          BUILD_NUMBER: ${{ steps.ver.outputs.build_number }}
         run: |
-          gh release create "${{ github.ref_name }}" `
-            "${{ steps.package.outputs.asset_path }}" `
-            --repo "${{ github.repository }}" `
-            --title "OASX ${{ github.ref_name }}" `
-            --notes "Fork build ${{ steps.ver.outputs.build_name }}+${{ steps.ver.outputs.build_number }}"
+          gh release view "$env:TAG_NAME" --repo "$env:REPO_NAME" 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload "$env:TAG_NAME" "$env:ASSET_PATH" `
+              --repo "$env:REPO_NAME" `
+              --clobber
+          } else {
+            gh release create "$env:TAG_NAME" "$env:ASSET_PATH" `
+              --repo "$env:REPO_NAME" `
+              --title "OASX $env:TAG_NAME" `
+              --notes "Fork build ${env:BUILD_NAME}+${env:BUILD_NUMBER}"
+          }

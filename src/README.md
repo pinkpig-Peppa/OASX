@@ -10,7 +10,7 @@ OASX 是面向 OAS 的 Flutter GUI 客户端，负责提供连接配置、本地
 
 每次修复将补丁版本递增 0.0.1，构建号同步递增。
 
-- 发布页：<https://github.com/tomoe1-1/OASX/releases>
+- 发布页：<https://github.com/pinkpig-Peppa/OASX/releases>
 - 变更记录：见 [CHANGELOG.md](./CHANGELOG.md)
 
 > 版本号来源：`pubspec.yaml` 的 `version:` 字段，运行时经 `package_info_plus` 读取。
@@ -249,7 +249,7 @@ UI 文案应优先通过 `I18n` key + `.tr` 接入，不建议直接写死展示
 - OASX 是 OAS 的 GUI 客户端，不是 OAS 服务端本体
 - OASX 负责提供图形化交互、连接配置和本地部署入口
 - OAS 相关文档可参考：
-  - 主仓库：<https://github.com/AzurTian/OnmyojiAutoScript>
+  - 主仓库：<https://github.com/pinkpig-Peppa/OnmyojiAutoScript>
   - 文档站点：<>
 
 ## 参与开发

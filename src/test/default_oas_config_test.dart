@@ -65,7 +65,7 @@ void main() {
     });
   });
 
-  group('private repository defaults', () {
+  group('default OAS repository settings', () {
     late Directory root;
 
     setUp(() {
@@ -75,13 +75,18 @@ void main() {
 
     tearDown(() => root.deleteSync(recursive: true));
 
-    test('empty Git settings use the private repository and self branch', () {
+    test('empty Git settings use pinkpig-Peppa/OnmyojiAutoScript master branch', () {
       File(
         '${root.path}/config/deploy.yaml',
       ).writeAsStringSync('Deploy:\n  Git: {}\n');
       final config = DeployGitConfig.read(root.path);
+      expect(
+        defaultOasRepository,
+        'https://github.com/pinkpig-Peppa/OnmyojiAutoScript.git',
+      );
+      expect(defaultOasBranch, 'master');
       expect(config.repository, defaultOasRepository);
-      expect(config.branch, 'self');
+      expect(config.branch, defaultOasBranch);
     });
 
     test('existing explicit repository and branch take precedence', () {

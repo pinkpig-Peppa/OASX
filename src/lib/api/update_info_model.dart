@@ -13,18 +13,25 @@ class UpdateInfoModel extends BaseNetModel {
     this.latestCommit,
     this.commit,
   });
-  UpdateInfoModel.fromJson(dynamic json) {
-    isUpdate = json['is_update'];
-    branch = json['branch'];
-    currentCommit = json['current_commit']!.cast<String>();
-    latestCommit = json['latest_commit']!.cast<String>();
-    // commit =
-    //      json['commit']!.map<List<String>>((dynamic e) => e.cast<String>() ).toList();
 
-    commit = [];
-    json['commit']!.forEach((e) {
-      commit!.add(e.cast<String>());
-    });
+  UpdateInfoModel.fromJson(dynamic json) {
+    if (json is! Map) {
+      return;
+    }
+    final rawUpdate = json['is_update'];
+    isUpdate = rawUpdate is bool ? rawUpdate : null;
+    branch = json['branch']?.toString();
+    currentCommit = _toStringList(json['current_commit']);
+    latestCommit = _toStringList(json['latest_commit']);
+    final rawCommits = json['commit'];
+    if (rawCommits is List) {
+      commit = rawCommits
+          .whereType<List>()
+          .map((item) => item.map((e) => e?.toString() ?? '').toList())
+          .toList();
+    } else {
+      commit = <List<String>>[];
+    }
   }
 
   bool? isUpdate;
@@ -32,4 +39,16 @@ class UpdateInfoModel extends BaseNetModel {
   List<String>? currentCommit;
   List<String>? latestCommit;
   List<List<String>>? commit;
+
+  bool get hasValidData =>
+      isUpdate != null &&
+      (currentCommit?.isNotEmpty ?? false) &&
+      (latestCommit?.isNotEmpty ?? false);
+
+  static List<String>? _toStringList(dynamic value) {
+    if (value is! List) {
+      return null;
+    }
+    return value.map((e) => e?.toString() ?? '').toList();
+  }
 }

@@ -10,18 +10,44 @@ part 'websocket_client.dart';
 class WebSocketService extends GetxService {
   final Map<String, WebSocketClient> _clients = {};
 
+  /// Builds a `ws://` or `wss://` endpoint URL from an HTTP/HTTPS/WS address.
+  static String buildWsUrl(String rawAddress, String name) {
+    final trimmed = rawAddress.trim();
+    final withScheme = trimmed.isEmpty
+        ? 'http://127.0.0.1:22288'
+        : (trimmed.contains('://') ? trimmed : 'http://$trimmed');
+    final parsed = Uri.parse(withScheme);
+    final scheme =
+        (parsed.scheme == 'https' || parsed.scheme == 'wss') ? 'wss' : 'ws';
+    final segments = <String>[
+      ...parsed.pathSegments.where((segment) => segment.isNotEmpty),
+      'ws',
+      name,
+    ];
+    return parsed.replace(scheme: scheme, pathSegments: segments).toString();
+  }
+
   Future<WebSocketClient> connect({
     required String name,
     String? url,
     MessageListener? listener,
     bool force = false,
   }) async {
-    if (_clients.containsKey(name) &&
-        _clients[name]!.status.value == WsStatus.connected) {
-      return _clients[name]!._addListener(listener);
+    final existing = _clients[name];
+    if (!force &&
+        existing != null &&
+        existing.status.value == WsStatus.connected) {
+      return existing._addListener(listener);
+    }
+    if (existing != null) {
+      _clients.remove(name);
+      await existing._close(
+        WebSocketStatus.normalClosure,
+        force ? 'force reconnect' : 'replace stale client',
+      );
     }
 
-    url ??= 'ws://${ApiClient().address}/ws/$name';
+    url ??= buildWsUrl(ApiClient().address, name);
     final client = WebSocketClient(name: name, url: url)._addListener(listener);
     _clients[name] = client;
     await client._connect();
@@ -31,7 +57,7 @@ class WebSocketService extends GetxService {
   Future<void> send(String name, String message) async {
     final client = _clients[name];
     if (client != null) {
-      client.send(message);
+      await client.send(message);
     } else {
       printInfo(info: 'ws[$name] want to send, but not connected');
     }
@@ -43,19 +69,19 @@ class WebSocketService extends GetxService {
     String reason = 'normal close',
     bool reconnect = false,
   }) async {
-    final client = _clients[name];
+    final client = _clients.remove(name);
     if (client != null) {
       await client._close(code, reason, reconnect: reconnect);
-      _clients.remove(name);
     }
     printInfo(info: 'ws[$name] closed');
   }
 
   Future<void> closeAll() async {
-    for (final client in _clients.values) {
+    final clients = _clients.values.toList();
+    _clients.clear();
+    for (final client in clients) {
       await client._close(WebSocketStatus.normalClosure, 'global close');
     }
-    _clients.clear();
     printInfo(info: 'ws all closed');
   }
 

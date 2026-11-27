@@ -1,9 +1,9 @@
 # OASX 2.x
 
-[OnmyojiAutoScript](https://github.com/tomoe1-1/OnmyojiAutoScript) 的**桌面控制端**，
+[OnmyojiAutoScript](https://github.com/pinkpig-Peppa/OnmyojiAutoScript) 的**桌面控制端**，
 基于 Flutter Windows 构建。
 
-**当前版本：v2.4.1** —— 失败任务队列只列出启用中的任务：手动停用的记录保留在数据里，但不再占列表、不进重试队列。2.4.0 起主页与启动页的少女会缓慢睁眼（眼睑按 5 张预渲染姿态图做连续性插值与网格变形，18 秒一轮）。
+**当前版本：v2.4.1+** —— 本分支由 `pinkpig-Peppa/OASX` 维护，新增设置页「导出诊断包」「一键体检」入口与 GitHub Actions 自动构建发布，并在 2.x 基础上保留失败任务队列过滤与 18 秒连续眼睑动画。
 
 后续每次修复将补丁版本递增 `0.0.1`，同时递增构建号。
 
@@ -13,35 +13,23 @@
 
 | 方式 | 适合谁 | 怎么做 |
 |---|---|---|
-| **下载发行包**（推荐普通用户） | 只想直接用 | 到 [Releases](../../releases/latest) 查看已发布版本；本仓库根目录也包含当前版运行文件 |
-| **clone 本仓库** | 想改代码 / 看实现 | `git clone`，根目录已是可运行的发行目录，同时含 `src/` 完整源码 |
+| **下载发行包**（推荐普通用户） | 只想直接用 | 到 [GitHub Releases](https://github.com/pinkpig-Peppa/OASX/releases/latest) 下载 `oasx_<version>_windows.zip`，解压后双击 `oasx.exe` |
+| **clone 本仓库** | 想改代码 / 自行构建 | `git clone`，进入 `src/` 使用 Flutter SDK 构建（仓库不再提交预编译二进制，避免与源码脱节） |
 
-> 本仓库的**根目录同时就是发行目录** —— clone 下来双击 `oasx.exe` 即可运行，
-> 无需再从别处复制文件。
+> 根目录不再保留预编译 `oasx.exe` / `*.dll` / `data/`，Windows 可执行发行包统一由 `.github/workflows/build-windows.yml` 构建并通过 GitHub Releases 分发。
 
 ## 目录结构
 
 ```
-OASX/                            # 仓库根目录 = 发行目录
-├─ oasx.exe                      # 主程序入口（双击运行）
-├─ flutter_windows.dll           # Flutter Windows 运行时
-├─ *_plugin.dll                  # 各功能插件（见下表）
-├─ build-info.json               # 版本号与产物 SHA256 校验
-├─ data/
-│  ├─ app.so                     # Dart AOT 编译产物（核心逻辑）
-│  ├─ icudtl.dat                 # ICU 国际化数据
-│  └─ flutter_assets/            # 界面资源
-│     ├─ assets/images/          #   应用图标
-│     ├─ assets/splash/          #   启动页与主页背景资源
-│     ├─ fonts/                  #   Material 图标字体
-│     └─ shaders/                #   渲染着色器
+OASX/
+├─ .github/workflows/            # Windows CI 自动构建与 Release 发布
 ├─ src/                          # ★ 完整 Flutter 工程（可重新构建）
 ├─ tools/                        # 资源清单同步 / 手工构建 / 版本资源工具
 ├─ docs/                         # 项目文档（含视觉验收页）
 └─ LICENSE
 ```
 
-### 插件 DLL 说明
+### 发行包内插件 DLL 说明
 
 | 文件 | 用途 |
 |---|---|
@@ -57,17 +45,17 @@ OASX/                            # 仓库根目录 = 发行目录
 ## 运行要求
 
 - Windows 10 / 11（x64）
-- 无需安装 Flutter SDK —— 所有运行时依赖已随包附带
+- 发行包内已附带全部运行时依赖，无需安装 Flutter SDK
 - 首次启动会自动定位 OAS 目录（见下）
 
-双击 `oasx.exe` 即可启动。**请保持 `data` 目录与所有 DLL 和 exe 位于同一目录。**
+解压发行包后双击 `oasx.exe` 即可启动。**请保持 `data` 目录与所有 DLL 和 exe 位于同一目录。**
 
-## 默认 OAS 私库
+## 默认 OAS 仓库
 
 首次启动且未保存 OAS 位置时，默认使用 `..\OAS\OnmyojiAutoScript-easy-install`。
 
-- 默认仓库：`git@github-oas:tomoe1-1/OAS-tomoe.git`
-- 默认分支：`self`
+- 默认仓库：`https://github.com/pinkpig-Peppa/OnmyojiAutoScript.git`
+- 默认分支：`master`
 
 > 已保存且有效的 OAS 位置、或 `deploy.yaml` 中明确配置的仓库与分支，**优先于**上述默认值。保存的目录失效时，仅检查程序旁经过验证的 OAS 安装，不对错误目录自动执行部署。
 
@@ -78,13 +66,12 @@ OASX/                            # 仓库根目录 = 发行目录
 ```powershell
 cd src
 flutter pub get
-flutter build windows --release --build-name 2.4.1 --build-number 28
+flutter analyze --no-fatal-infos
+flutter test
+flutter build windows --release --build-name 2.4.2 --build-number 29
 ```
 
-产物位于 `src\build\windows\x64\runner\Release`，把该目录下全部运行文件复制到发行目录即可。
-
-`tools/build_manual.sh` 用于已有原生 runner 的手工 AOT 构建，需要显式设置
-`FLUTTER_ROOT`、`PYTHON_BIN`，以及同插件版本生成的 `dart_plugin_registrant.dart`。
+产物位于 `src\build\windows\x64\runner\Release`，将其打包或复制到目标目录运行即可。推送 `v*` tag 或在 GitHub Actions 手动触发 `Build Windows` 工作流会自动完成分析、测试、构建并上传发行包。
 
 | 组件 | 版本 |
 |---|---|
@@ -95,45 +82,26 @@ flutter build windows --release --build-name 2.4.1 --build-number 28
 > 若报 `Building with plugins requires symlink support`，请开启「开发者模式」
 > （设置 → 系统 → 开发者选项），或以管理员身份运行终端。
 
-## 版本与校验
-
-`build-info.json` 记录版本与产物哈希：
-
-| 字段 | 值 |
-|---|---|
-| version / build | `2.4.1` / `28` |
-| 工具链 | Flutter 3.47.5 / Dart 3.13.4 |
-| 平台 | windows-x64 |
-
-已核验与实物一致：
-
-| 文件 | SHA256 |
-|---|---|
-| `data/app.so` | `4D70E3B6DDE39D244B61AC3799413820E1C3FE65314540AA118293CBCCFA86D8` |
-| `oasx.exe` | `1B2161A4F42A51E4A15B462126D75B872FF4D29ABC0580B71464B725DE8FB288` |
-
-本机手工测试链（`frontend_server` + `flutter_tester`）跑通 26 个测试文件中的 24 个，共 **170 项通过**：本次更新工作台失败任务回归 11 项（停用任务不渲染、计数归零并显示「暂无失败任务」、数据层仍保留记录、重新启用后回到列表并恢复重试时间），另有 11 项眼睛动画回归（眼睑高度逐 0.01 秒扫描的连续性、姿态图资源登记、主页与启动页睁眼时间线、真实素材渲染、版本号三处来源一致），其余覆盖当前/下个任务、失败任务选择、实时状态、启动页、主页背景、窗口几何、OAS 目录恢复、标题栏、实际工作台与统计 Dashboard。另有 2 项为**仓库既有失败**（`args_test` 的 multi_enum 解析、Flutter 模板残留的 `widget_test`），与 2.1.0 / 2.2.0 / 2.3.0 / 2.4.0 基线对照失败方式一致，与本次改动无关。眼睛动画为渲染层改动，尚未以人工肉眼逐帧验收。
-
 ## 自动更新
 
-应用内「检查更新」指向本仓库所属的发布库 Releases：
+应用内「检查更新」指向本仓库的 GitHub Releases：
 
 ```
-https://api.github.com/repos/tomoe1-1/OASX/releases/latest
+https://api.github.com/repos/pinkpig-Peppa/OASX/releases/latest
 ```
 
-比对本机版本与最新 release 的 tag，仅当远端更新时提示。
+比对本机版本与最新 release 的 tag，仅当远端更新时提示；Windows 更新采用同卷备份与选择性原地覆盖，支持跨盘符更新、保留 `logs/` 等用户文件，并在失败时自动回滚。
 
-## 与 1.x 的关系
+## 与上游的关系
 
-1.x 与 2.x 属于**同一条发布线**（`tomoe1-1/OASX` Releases），2.x 是视觉层重做：
+本仓库基于 `tomoe1-1/OASX` 2.x 演进（2.x 完成了视觉层与工作台重做）：
 
 - 主页加入正面人物科技风**全幅动态背景**，随窗口尺寸自适应铺满
 - 启动页线稿**右下角重绘**
 - 工作台与日志区**透明度重新校准**
 - 恢复**左上角应用图标**
 
-功能逻辑与操作路径未变，从 1.x 升级无学习成本。历史版本见 [Releases](../../releases)。
+历史版本见 [Releases](https://github.com/pinkpig-Peppa/OASX/releases)。
 
 ## 2.4.1 失败任务列表
 
@@ -217,6 +185,6 @@ https://api.github.com/repos/tomoe1-1/OASX/releases/latest
 
 ## 仓库说明
 
-- 本仓库同时是**发行目录**与**源码仓库**
-- `logs/`（本机运行日志）、`src/build/`、`src/.dart_tool/` 等已在 `.gitignore` 排除
-- `OASX.zip`（发行包）**不入库** —— 它通过 GitHub Release 分发，避免仓库重复存储
+- 本仓库仅托管**源码、工具脚本与文档**，Windows 发行包统一通过 GitHub Releases 分发
+- `logs/`（本机运行日志）、`src/build/`、`src/.dart_tool/` 及根目录运行产物（`oasx.exe`、`*.dll`、`data/`）均已在 `.gitignore` 排除
+- `oasx_<version>_windows.zip`（发行包）**不入库** —— 由 CI 自动构建并上传至 GitHub Release

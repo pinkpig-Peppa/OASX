@@ -175,20 +175,80 @@ class ApiClient {
     return res.isSuccess && res.data == 'success';
   }
 
+  static const Duration _diagnosticTimeout = Duration(seconds: 30);
+
   /// 导出后端脱敏诊断包 (配置摘要 + 最近日志), 见 OAS /home/export_diagnostic。
-  Future<Map<String, dynamic>?> exportDiagnostic() async {
-    final res = await request<dynamic>(() => get('/home/export_diagnostic'));
-    if (!res.isSuccess || res.data is! Map) return null;
-    final data = Map<String, dynamic>.from(res.data as Map);
-    return data['success'] == true ? data : null;
-  }
-  /// 运行 OAS 一键体检, 返回 pass/warn/fail 结构化报告
-  Future<Map<String, dynamic>?> runDoctor({String configName = ''}) async {
+  Future<ApiResult<Map<String, dynamic>>> exportDiagnosticResult({
+    String configName = '',
+  }) async {
+    final trimmed = configName.trim();
+    final query = trimmed.isEmpty ? null : {'config_name': trimmed};
     final res = await request<dynamic>(
-      () => get('/tool/doctor', queryParameters: {'config_name': configName}),
+      () => get(
+        '/home/export_diagnostic',
+        queryParameters: query,
+        options: Options(receiveTimeout: _diagnosticTimeout),
+      ).timeout(_diagnosticTimeout + const Duration(seconds: 5)),
     );
-    if (!res.isSuccess || res.data is! Map) return null;
-    return Map<String, dynamic>.from(res.data as Map);
+    if (!res.isSuccess) {
+      return ApiResult.failure(res.error, res.code);
+    }
+    if (res.data is! Map) {
+      return ApiResult.failure('unexpected diagnostic payload', res.code);
+    }
+    final data = Map<String, dynamic>.from(res.data as Map);
+    if (data['success'] != true) {
+      final err = (data['error'] ?? '').toString().trim();
+      return ApiResult.failure(
+        err.isEmpty ? 'diagnostic export failed' : err,
+        res.code,
+      );
+    }
+    return ApiResult.success(data);
+  }
+
+  /// 导出后端脱敏诊断包，失败时返回 null。
+  Future<Map<String, dynamic>?> exportDiagnostic({
+    String configName = '',
+  }) async {
+    final res = await exportDiagnosticResult(configName: configName);
+    return res.isSuccess ? res.data : null;
+  }
+
+  /// 运行 OAS 一键体检, 返回 pass/warn/fail 结构化报告或错误原因。
+  Future<ApiResult<Map<String, dynamic>>> runDoctorResult({
+    String configName = '',
+  }) async {
+    final res = await request<dynamic>(
+      () => get(
+        '/tool/doctor',
+        queryParameters: {'config_name': configName.trim()},
+        options: Options(receiveTimeout: _diagnosticTimeout),
+      ).timeout(_diagnosticTimeout + const Duration(seconds: 5)),
+    );
+    if (!res.isSuccess) {
+      return ApiResult.failure(res.error, res.code);
+    }
+    if (res.data is! Map) {
+      return ApiResult.failure('unexpected doctor payload', res.code);
+    }
+    final data = Map<String, dynamic>.from(res.data as Map);
+    final err = (data['error'] ?? '').toString().trim();
+    final checks = data['checks'];
+    if (err.isNotEmpty ||
+        (data['ok'] == false && (checks is! List || checks.isEmpty))) {
+      return ApiResult.failure(
+        err.isEmpty ? 'doctor execution failed' : err,
+        res.code,
+      );
+    }
+    return ApiResult.success(data);
+  }
+
+  /// 运行 OAS 一键体检，失败时返回 null。
+  Future<Map<String, dynamic>?> runDoctor({String configName = ''}) async {
+    final res = await runDoctorResult(configName: configName);
+    return res.isSuccess ? res.data : null;
   }
 
   Future<bool> notifyTest(String setting, String title, String content) async {
@@ -261,7 +321,7 @@ class ApiClient {
 
   Future<UpdateInfoModel> getUpdateInfo() async {
     final res = await request(() => get('/home/update_info'));
-    return res.isSuccess
+    return res.isSuccess && res.data is Map
         ? UpdateInfoModel.fromJson(res.data)
         : UpdateInfoModel();
   }
@@ -270,9 +330,9 @@ class ApiClient {
     final res = await request(() => get('/home/execute_update'));
     if (res.isSuccess) {
       showDialog('Update', res.data.toString());
-      return res.data;
+      return res.data?.toString();
     }
-    return res.data;
+    return res.data?.toString();
   }
 
   Future<bool> putChineseTranslate() async {
@@ -285,9 +345,20 @@ class ApiClient {
   Future<Map<String, Map<String, String>>> getAdditionalTranslate() async {
     final res = await request(() => get('/home/additional_translate'));
     final result = <String, Map<String, String>>{};
-    if (res.isSuccess) {
-      result['zh_CN'] = (res.data['zh-CN'] as Map).cast<String, String>();
-      result['en_US'] = (res.data['en-US'] as Map).cast<String, String>();
+    if (res.isSuccess && res.data is Map) {
+      final raw = res.data as Map;
+      final zh = raw['zh-CN'];
+      if (zh is Map) {
+        result['zh_CN'] = zh.map(
+          (key, value) => MapEntry(key.toString(), value?.toString() ?? ''),
+        );
+      }
+      final en = raw['en-US'];
+      if (en is Map) {
+        result['en_US'] = en.map(
+          (key, value) => MapEntry(key.toString(), value?.toString() ?? ''),
+        );
+      }
     }
     return result;
   }

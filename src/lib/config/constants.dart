@@ -6,7 +6,7 @@ const String updateUrlGithub =
     'https://api.github.com/repos/pinkpig-Peppa/OASX/releases/latest';
 
 const String readmeUrlGithub =
-    'https://api.github.com/repos/runhey/OnmyojiAutoScript/readme';
+    'https://api.github.com/repos/pinkpig-Peppa/OnmyojiAutoScript/readme';
 
 /// 发布页兜底链接：接口拿不到 `html_url` 时用它。
 const String oasxRelease = "https://github.com/pinkpig-Peppa/OASX/releases";

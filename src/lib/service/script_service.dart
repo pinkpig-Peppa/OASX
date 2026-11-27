@@ -59,6 +59,7 @@ class ScriptService extends GetxService {
   final autoScriptList = <String>[].obs;
   final Map<String, ScriptTaskTracker> _taskTrackers = {};
   final Map<String, int> _taskRecoveryTokens = {};
+  final Map<String, StreamSubscription<WsStatus>> _wsStatusSubscriptions = {};
 
   bool get _shouldSkipBackendReload {
     return PlatformUtils.isWeb && !ApiClient().hasConfiguredBackendAddress;
@@ -73,6 +74,10 @@ class ScriptService extends GetxService {
 
   @override
   Future<void> onClose() async {
+    for (final sub in _wsStatusSubscriptions.values) {
+      unawaited(sub.cancel());
+    }
+    _wsStatusSubscriptions.clear();
     await Future.wait([
       ...scriptModelMap.keys.map(
         (e) => Future.wait([
@@ -118,6 +123,7 @@ class ScriptService extends GetxService {
     scriptModelMap.remove(name);
     _taskTrackers.remove(name);
     _taskRecoveryTokens.remove(name);
+    unawaited(_wsStatusSubscriptions.remove(name)?.cancel());
     wsService.close(name);
     autoScriptList.removeWhere((e) => e == name);
     scriptOrderList.removeWhere((e) => e == name);
@@ -197,6 +203,10 @@ class ScriptService extends GetxService {
   }
 
   Future<void> resetDashboardState() async {
+    for (final sub in _wsStatusSubscriptions.values) {
+      unawaited(sub.cancel());
+    }
+    _wsStatusSubscriptions.clear();
     await wsService.closeAll();
     final names = scriptModelMap.keys.toList();
     for (final name in names) {

@@ -8,34 +8,75 @@ import 'package:oasx/config/design_tokens.dart';
 
 import 'package:oasx/translation/i18n_content.dart';
 
-class UpdaterView extends StatelessWidget {
-  const UpdaterView({Key? key}) : super(key: key);
+class UpdaterView extends StatefulWidget {
+  const UpdaterView({super.key});
+
+  @override
+  State<UpdaterView> createState() => _UpdaterViewState();
+}
+
+class _UpdaterViewState extends State<UpdaterView> {
+  late Future<UpdateInfoModel> _updateInfoFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateInfoFuture = ApiClient().getUpdateInfo();
+  }
+
+  void _reload() {
+    setState(() {
+      _updateInfoFuture = ApiClient().getUpdateInfo();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<UpdateInfoModel>(
-      future: ApiClient().getUpdateInfo(),
+      future: _updateInfoFuture,
       builder: (BuildContext context, AsyncSnapshot<UpdateInfoModel> snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const CircularProgressIndicator();
-        } else if (snapshot.hasError) {
-          return Text('Error: ${snapshot.error}');
-        } else {
-          UpdateInfoModel data = snapshot.data!;
-          return SingleChildScrollView(
-            child: content(data, context).paddingAll(Spacing.xl),
-          );
+          return const Center(child: CircularProgressIndicator());
         }
+        if (snapshot.hasError) {
+          return _emptyOrError(context, 'Error: ${snapshot.error}');
+        }
+        final data = snapshot.data;
+        if (data == null || !data.hasValidData) {
+          return _emptyOrError(context, I18n.noData.tr);
+        }
+        return SingleChildScrollView(
+          child: content(data, context).paddingAll(Spacing.xl),
+        );
       },
     );
   }
 
+  Widget _emptyOrError(BuildContext context, String message) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(message),
+        const SizedBox(height: Spacing.md),
+        TextButton(
+          onPressed: _reload,
+          child: Text(I18n.retry.tr),
+        ),
+      ],
+    ).paddingAll(Spacing.xl);
+  }
+
   Widget content(UpdateInfoModel data, BuildContext context) {
+    final isUpdate = data.isUpdate ?? false;
+    final branch = data.branch ?? '-';
+    final currentCommit = data.currentCommit ?? const <String>[];
+    final latestCommit = data.latestCommit ?? const <String>[];
+
     Widget title = <Widget>[
-      data.isUpdate!
+      isUpdate
           ? const Icon(Icons.cloud_download)
           : Icon(Icons.cloud_off, color: SemanticColors.success(context)),
-      data.isUpdate!
+      isUpdate
           ? Text(
               I18n.findOasNewVersion.tr,
               style: Theme.of(context).textTheme.titleMedium,
@@ -46,7 +87,7 @@ class UpdaterView extends StatelessWidget {
             ),
       const SizedBox(width: Spacing.xl),
       Text(
-        '${I18n.currentBranch.tr}: ${data.branch}',
+        '${I18n.currentBranch.tr}: $branch',
         style: Theme.of(context).textTheme.titleMedium,
         textAlign: TextAlign.center,
       ).constrained(height: 26),
@@ -67,8 +108,8 @@ class UpdaterView extends StatelessWidget {
       defaultVerticalAlignment: TableCellVerticalAlignment.middle,
       children: [
         differHead(context),
-        genTableRow(data.currentCommit!, differ: true, localRepo: true),
-        genTableRow(data.latestCommit!, differ: true),
+        genTableRow(currentCommit, differ: true, localRepo: true),
+        genTableRow(latestCommit, differ: true),
       ],
     );
     Widget scrollableTitle = SingleChildScrollView(
@@ -104,7 +145,12 @@ class UpdaterView extends StatelessWidget {
   }
 
   String sha1(String data) {
-    return data.substring(0, 7);
+    final trimmed = data.trim();
+    return trimmed.length > 7 ? trimmed.substring(0, 7) : trimmed;
+  }
+
+  String _cell(List<String> row, int index) {
+    return index < row.length ? row[index] : '';
   }
 
   TableRow genTableRow(
@@ -114,11 +160,11 @@ class UpdaterView extends StatelessWidget {
   }) {
     return TableRow(
       children: [
-        Text(sha1(data[0])).paddingAll(Spacing.smPlus),
-        Text(data[1]).paddingAll(Spacing.smPlus),
-        Text(data[2], overflow: TextOverflow.ellipsis, maxLines: 2)
+        Text(sha1(_cell(data, 0))).paddingAll(Spacing.smPlus),
+        Text(_cell(data, 1)).paddingAll(Spacing.smPlus),
+        Text(_cell(data, 2), overflow: TextOverflow.ellipsis, maxLines: 2)
             .paddingAll(Spacing.smPlus),
-        Text(data[3], overflow: TextOverflow.ellipsis, maxLines: 2)
+        Text(_cell(data, 3), overflow: TextOverflow.ellipsis, maxLines: 2)
             .paddingAll(Spacing.smPlus),
         if (differ)
           localRepo
@@ -177,11 +223,9 @@ class UpdaterView extends StatelessWidget {
     ],
   );
 
-  List<TableRow> submitHistoryData(data, BuildContext context) {
-    List<TableRow> result = data.commit!
-        .map((e) => genHistoryTableRow(e))
-        .toList()
-        .cast<TableRow>();
+  List<TableRow> submitHistoryData(UpdateInfoModel data, BuildContext context) {
+    final commits = data.commit ?? const <List<String>>[];
+    final result = commits.map(genHistoryTableRow).toList();
     result.insert(0, historyHead(context));
     return result;
   }
@@ -189,11 +233,11 @@ class UpdaterView extends StatelessWidget {
   TableRow genHistoryTableRow(List<String> data) {
     return TableRow(
       children: [
-        Text(sha1(data[0])).paddingAll(Spacing.smPlus),
-        Text(data[1]).paddingAll(Spacing.smPlus),
-        Text(data[2], overflow: TextOverflow.ellipsis, maxLines: 2)
+        Text(sha1(_cell(data, 0))).paddingAll(Spacing.smPlus),
+        Text(_cell(data, 1)).paddingAll(Spacing.smPlus),
+        Text(_cell(data, 2), overflow: TextOverflow.ellipsis, maxLines: 2)
             .paddingAll(Spacing.smPlus),
-        Text(data[3]).paddingAll(Spacing.smPlus),
+        Text(_cell(data, 3)).paddingAll(Spacing.smPlus),
       ],
     );
   }
