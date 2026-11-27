@@ -28,14 +28,31 @@ class ArgsController extends GetxController {
   }
 
   void loadModel(Map<String, dynamic> json) {
-    groups.value = [];
+    final loaded = <GroupsModel>[];
     json.forEach((key, value) {
-      groups.value.add(GroupsModel(groupName: key, members: value));
+      final members = value is List
+          ? value
+              .map(
+                (item) => item is ArgumentModel
+                    ? item
+                    : item is Map
+                        ? ArgumentModel.fromJson(
+                            Map<String, dynamic>.from(item),
+                          )
+                        : item,
+              )
+              .toList()
+          : <dynamic>[];
+      loaded.add(GroupsModel(groupName: key, members: members));
     });
+    groups.value = loaded;
   }
 
   void loadModelfromStr(String json) {
-    loadModel(jsonDecode(json));
+    final decoded = jsonDecode(json);
+    if (decoded is Map) {
+      loadModel(Map<String, dynamic>.from(decoded));
+    }
   }
 
   Future<void> loadGroups({
@@ -58,10 +75,17 @@ class ArgsController extends GetxController {
     final names = <String>[];
     final json = await ApiClient().getScriptTask(config, task);
     for (final entry in json.entries) {
+      if (entry.value is! List) {
+        continue;
+      }
       names.add(entry.key);
       final arguments = <ArgumentModel>[];
-      for (final argument in entry.value) {
-        arguments.add(ArgumentModel.fromJson(argument));
+      for (final argument in entry.value as List) {
+        if (argument is Map) {
+          arguments.add(
+            ArgumentModel.fromJson(Map<String, dynamic>.from(argument)),
+          );
+        }
       }
       groupsMap[entry.key] =
           GroupsModel(groupName: entry.key, members: arguments);
@@ -75,14 +99,15 @@ class ArgsController extends GetxController {
   }
 
   Future<dynamic> getArgValue(
-      String config, String task, String group, String argument) {
+    String config,
+    String task,
+    String group,
+    String argument,
+  ) async {
     if (groupsData.value.isEmpty) {
-      loadGroups(config: config, task: task);
+      await loadGroups(config: config, task: task);
     }
-    return groupsData.value[group]!.members
-        .map((e) => e as ArgumentModel)
-        .firstWhere((element) => element.title == argument)
-        .value;
+    return findArgument(group, argument)?.value;
   }
 
   Future<bool> setArgument(String? config, String? task, String group,

@@ -17,6 +17,7 @@ import 'package:oasx/service/app_update/models/app_update_plan.dart';
 import 'package:oasx/service/app_update/update_package_io.dart';
 import 'package:oasx/translation/i18n_content.dart';
 import 'package:oasx/utils/platform_utils.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -163,13 +164,19 @@ class AppUpdateService extends GetxService {
     final session = UpdateDownloadSession();
     _activeDownloadSession = session;
     final tempDirectory = await getTemporaryDirectory();
+    final versionDir = _sanitizePathSegment(
+      plan.release.version,
+      fallback: 'latest',
+    );
     final updateDirectory = Directory(
-      '${tempDirectory.path}${Platform.pathSeparator}oasx_updates${Platform.pathSeparator}${plan.release.version ?? 'latest'}',
+      p.join(tempDirectory.path, 'oasx_updates', versionDir),
     );
     await updateDirectory.create(recursive: true);
-    final assetName = asset.name ?? 'oasx_update_package';
-    final filePath =
-        '${updateDirectory.path}${Platform.pathSeparator}$assetName';
+    final assetName = _sanitizePathSegment(
+      asset.name,
+      fallback: 'oasx_update_package',
+    );
+    final filePath = p.join(updateDirectory.path, assetName);
     await UpdatePackageIo.downloadToFile(
       asset.downloadUrl!,
       filePath,
@@ -292,5 +299,22 @@ class AppUpdateService extends GetxService {
   String _readProxyUrl() {
     final raw = _storage.read(StorageKey.updateProxyUrl.name);
     return raw is String ? raw.trim() : '';
+  }
+
+  /// Sanitizes remote release version or asset names into a single safe segment.
+  static String _sanitizePathSegment(
+    String? raw, {
+    required String fallback,
+  }) {
+    final trimmed = raw?.trim() ?? '';
+    if (trimmed.isEmpty) {
+      return fallback;
+    }
+    final leaf = p.basename(trimmed.replaceAll('\\', '/'));
+    final cleaned = leaf.replaceAll(RegExp(r'[^A-Za-z0-9._+-]'), '_');
+    if (cleaned.isEmpty || cleaned == '.' || cleaned == '..') {
+      return fallback;
+    }
+    return cleaned;
   }
 }

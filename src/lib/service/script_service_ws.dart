@@ -10,7 +10,8 @@ extension ScriptServiceWsX on ScriptService {
       name: name,
       listener: (mg) => wsListener(mg, name),
     );
-    client.status.listen((wsStatus) {
+    await _wsStatusSubscriptions.remove(name)?.cancel();
+    _wsStatusSubscriptions[name] = client.status.listen((wsStatus) {
       scriptModelMap[name]?.update(state: wsStatus.scriptState);
       if (wsStatus == WsStatus.closed ||
           wsStatus == WsStatus.error ||
@@ -54,7 +55,18 @@ extension ScriptServiceWsX on ScriptService {
       if (tracker.consumeLog(message)) _publishTrackedTasks(name);
       return;
     }
-    final data = jsonDecode(message) as Map<String, dynamic>;
+    final Map<String, dynamic> data;
+    try {
+      final decoded = jsonDecode(message);
+      if (decoded is! Map) {
+        if (tracker.consumeLog(message)) _publishTrackedTasks(name);
+        return;
+      }
+      data = Map<String, dynamic>.from(decoded);
+    } on FormatException {
+      if (tracker.consumeLog(message)) _publishTrackedTasks(name);
+      return;
+    }
     if (data.containsKey('state')) {
       final state = ScriptState.getState(data['state']);
       final recover = tracker.observeServerRunning(

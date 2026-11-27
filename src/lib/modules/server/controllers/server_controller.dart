@@ -32,6 +32,8 @@ class ServerController extends GetxController with LogMixin {
   Shell? shell;
   var shellController = ShellLinesController();
   var shellErrorController = ShellLinesController();
+  StreamSubscription<String>? _shellStdoutSub;
+  StreamSubscription<String>? _shellStderrSub;
 
   /// Tracks whether taskkill already reported that pythonw.exe is absent.
   var _pythonwNotRunningLogged = false;
@@ -53,15 +55,24 @@ class ServerController extends GetxController with LogMixin {
     autoLoginAfterDeploy.value =
         _storage.read(StorageKey.autoLoginAfterDeploy.name) ?? false;
     shell = getShell;
-    shellController.stream.listen(
+    _shellStdoutSub = shellController.stream.listen(
       (event) => addLog(!event.contains('INFO') ? 'INFO: $event' : event),
     );
-    shellErrorController.stream.listen(_addShellErrorLine);
+    _shellStderrSub = shellErrorController.stream.listen(_addShellErrorLine);
     rootPathAuthenticated.value = authenticatePath(rootPathServer.value);
     if (rootPathAuthenticated.value) {
       readDeploy();
     }
     super.onInit();
+  }
+
+  @override
+  void onClose() {
+    unawaited(_shellStdoutSub?.cancel());
+    unawaited(_shellStderrSub?.cancel());
+    shellController.close();
+    shellErrorController.close();
+    super.onClose();
   }
 
   void updateRootPathServer(String value) {
@@ -78,9 +89,12 @@ class ServerController extends GetxController with LogMixin {
   }
 
   bool authenticatePath(String root) {
-    root.replaceAll('\\', '/');
+    final normalized = root.trim();
+    if (normalized.isEmpty) {
+      return false;
+    }
     try {
-      final rootDir = Directory(root);
+      final rootDir = Directory(normalized);
       if (!rootDir.existsSync()) {
         return false;
       }
@@ -185,15 +199,20 @@ class ServerController extends GetxController with LogMixin {
       '${rootPathServer.value}\\toolkit\\Lib\\site-packages\\adbutils\\binaries';
   String get pathScripts => '${rootPathServer.value}\\toolkit\\Scripts';
   String get pathSeparator => Platform.isWindows ? ';' : ':';
-  Map<String, String> get pathPATH => {
-    'PATH': [
-      rootPathServer.value,
-      pathGit,
-      pathPython,
-      pathAdb,
-      pathScripts,
-    ].join(pathSeparator),
-  };
+  Map<String, String> get pathPATH {
+    final existingPath =
+        Platform.environment['PATH'] ?? Platform.environment['Path'] ?? '';
+    return {
+      'PATH': [
+        rootPathServer.value,
+        pathGit,
+        pathPython,
+        pathAdb,
+        pathScripts,
+        if (existingPath.trim().isNotEmpty) existingPath,
+      ].join(pathSeparator),
+    };
+  }
 
   Shell get getShell => Shell(
     workingDirectory: rootPathServer.value,
@@ -359,21 +378,28 @@ class ServerController extends GetxController with LogMixin {
       shell!.kill();
       await runShell('echo OAS working directory: ');
       await runShell('cd');
-      await runShell(
-        'taskkill /f /t /im pythonw.exe',
-        ignorePythonwNotRunning: true,
-      );
+      await _stopOasPythonwProcesses();
       _step(1, '正在拉取 OAS 仓库…');
-      await prefetchRepository();
+      final prefetched = await prefetchRepository();
+      if (!prefetched) {
+        const message = '拉取 OAS 仓库失败，请检查网络或 deploy.yaml 配置';
+        addLog('ERROR: $message');
+        throw StateError(message);
+      }
       _step(1, '仓库已同步');
       final pythonConfig = DeployPythonConfig.read(rootPathServer.value);
       _step(2, '正在安装运行依赖（可能需要几分钟）…');
-      await runShell(
+      final installed = await runShell(
         shellExecutableArguments(
           pythonConfig.getPythonPath(rootPathServer.value),
           ['-m', 'deploy.installer'],
         ),
       );
+      if (!installed) {
+        const message = '安装 OAS 运行依赖失败，请查看上方日志';
+        addLog('ERROR: $message');
+        throw StateError(message);
+      }
       _step(2, '依赖安装完成');
       await runShell('echo Start OAS');
       _step(3, '正在启动 OAS 服务…');
@@ -404,6 +430,44 @@ class ServerController extends GetxController with LogMixin {
       );
     } finally {
       isDeployLoading.value = false;
+    }
+  }
+
+  /// Stops only `pythonw.exe` processes associated with the current OAS root.
+  Future<void> _stopOasPythonwProcesses() async {
+    if (!Platform.isWindows) {
+      return;
+    }
+    final normalizedRoot = rootPathServer.value
+        .trim()
+        .replaceAll('/', '\\')
+        .toLowerCase();
+    if (normalizedRoot.isEmpty) {
+      return;
+    }
+    final rootLiteral = normalizedRoot.replaceAll("'", "''");
+    final psScript =
+        r"$root = '__ROOT__'; "
+        r'''$procs = @(Get-CimInstance Win32_Process -Filter "Name='pythonw.exe'" -ErrorAction SilentlyContinue | Where-Object { '''
+        r"($_.ExecutablePath -and $_.ExecutablePath.ToLower().StartsWith($root)) -or "
+        r"($_.CommandLine -and $_.CommandLine.ToLower().Contains($root)) "
+        r"}); "
+        r"foreach ($p in $procs) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }; "
+        r"Write-Output $procs.Count"
+            .replaceFirst('__ROOT__', rootLiteral);
+    try {
+      final result = await Process.run(
+        'powershell.exe',
+        ['-NoLogo', '-NoProfile', '-Command', psScript],
+      );
+      final count = int.tryParse((result.stdout ?? '').toString().trim()) ?? 0;
+      if (count > 0) {
+        addLog('INFO: Stopped $count OAS pythonw.exe process(es)');
+      } else {
+        addLog('WARNING: OAS pythonw.exe is not running, skip stop');
+      }
+    } catch (e) {
+      addLog('WARNING: Failed to inspect OAS pythonw.exe processes: $e');
     }
   }
 
