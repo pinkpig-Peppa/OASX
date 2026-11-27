@@ -125,7 +125,7 @@ class ApiClient {
   }) async {
     try {
       final res = await apiFn();
-      return res.when(
+      return await res.when(
         success: (data) => ApiResult.fromResponse(data),
         failure: (msg, code) {
           onError?.call(msg, code);
